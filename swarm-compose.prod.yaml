@@ -1,0 +1,133 @@
+version: "3.9"
+
+services:
+  server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile.prod
+      args:
+        testarg: "ok"
+      # cache_from:
+      labels:
+        - "com.example.description=Accounting server"
+      # network:
+      # shm_size:
+    configs:
+      - my_config
+
+    image: server
+    command: gunicorn core.wsgi:application --bind 0.0.0.0:8000
+    # env_file:
+    #   - ./.env.prod
+    # ports:
+    #   - 8080:8000
+    expose:
+      - 8000
+    volumes:
+      - ./server:/usr/src/app
+      - static_volume:/home/app/server/staticfiles
+      - media_volume:/home/app/server/mediafiles
+    deploy:
+      mode: replicated
+      replicas: 1
+    depends_on:
+      - db
+    secrets:
+      - env_prod
+
+  redis:
+    image: redis:7-alpine
+    command: --port 6380
+
+  db:
+    image: postgres:15.0-alpine
+    volumes:
+      - postgres_data:/var/lib/postgresql/data/
+    # env_file:
+    #   - ./.env.prod.db
+
+    environment:
+      POSTGRES_USER: /run/secrets/env_prod/POSTGRES_USER
+      POSTGRES_PASSWORD: /run/secrets/env_prod/POSTGRES_PASSWORD
+      POSTGRES_DB: /run/secrets/env_prod/POSTGRES_DB
+
+    secrets:
+      - prod_db
+
+  # nginx_conf:
+  #   container_name: nginx_conf
+  #   build:
+  #     context: ./nginx
+  #     dockerfile: Dockerfile
+  #   image: nginx_conf
+  #   volumes:
+  #     - static_volume:/home/app/server/staticfiles
+  #     - media_volume:/home/app/server/mediafiles
+  #   ports:
+  #     - 8080:80
+  #   depends_on:
+  #     - server
+
+  nginx-proxy:
+    container_name: nginx-proxy
+    build: nginx
+    image: nginx-proxy
+    restart: always
+    ports:
+      - 443:443
+      - 8080:80
+    volumes:
+      - static_volume:/home/app/server/staticfiles
+      - media_volume:/home/app/server/mediafiles
+      - certs:/etc/nginx/certs
+      - html:/usr/share/nginx/html
+      - vhost:/etc/nginx/vhost.d
+      - /var/run/docker.sock:/tmp/docker.sock:ro
+    depends_on:
+      - server
+
+  nginx-proxy-letsencrypt:
+    image: jrcs/letsencrypt-nginx-proxy-companion
+    image: nginx-proxy-letsencrypt
+    env_file:
+      - ./.env.prod.proxy-companion
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - certs:/etc/nginx/certs
+      - html:/usr/share/nginx/html
+      - vhost:/etc/nginx/vhost.d
+      - acme:/etc/acme.sh
+    depends_on:
+      - nginx-proxy
+
+  nginx-proxy-letsencrypt:
+    image: jrcs/letsencrypt-nginx-proxy-companion
+    env_file:
+      - ./.env.prod.proxy-companion
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - certs:/etc/nginx/certs
+      - html:/usr/share/nginx/html
+      - vhost:/etc/nginx/vhost.d
+      - acme:/etc/acme.sh
+    depends_on:
+      - nginx-proxy
+
+volumes:
+  postgres_data:
+  static_volume:
+  media_volume:
+  certs:
+  html:
+  vhost:
+  acme:
+
+configs:
+  my_config:
+    file: ./my_config.txt
+
+secrets:
+  env_prod:
+    file: ./.env.prod
+  prod_db:
+    file: ./.env.prod.db

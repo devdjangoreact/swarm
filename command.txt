@@ -1,0 +1,30 @@
+git reset --hard 71c27777543ccfcb0376dcdd8f6777df055ef479
+
+docker stack deploy --compose-file swarm-compose.prod.yaml study
+
+docker compose up --build
+
+docker stack rm study
+
+docker compose -f swarm-compose.prod.yaml build
+
+docker secret create
+docker secret inspect
+docker secret ls
+docker secret rm
+
+FROM base as prod
+RUN pipenv install --system --skip-lock
+ENV FLASK_ENV production
+
+# docker-compose.yml
+version: '3.4'
+services:
+  webapp:
+    build:
+      context: ./dir
+      dockerfile: Dockerfile
+      target: prod
+
+  
+python manage.py createsuperuser --database=default --username=dev --email=dev@dev.com --password=1111
